@@ -1,0 +1,70 @@
+"""
+Main Orchestrator — composes all four phases and the HITL gate into one StateGraph.
+Pure routing: all business logic lives in the subgraphs.
+"""
+
+from __future__ import annotations
+import logging
+from typing import Any
+
+from langgraph.graph import StateGraph, START, END
+
+from .state import CIPipelineState
+from .phase1 import phase1_app
+from .phase2 import phase2_app
+from .phase3 import phase3_app
+from .evaluation import eval_app
+from .hitl import (
+    risk_gate_check, human_review_gate,
+    pipeline_rejected, route_after_hitl,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def build_orchestrator() -> Any:
+    """
+    Assemble the main CI pipeline StateGraph.
+    Returns an uncompiled builder — compile at runtime to inject a checkpointer.
+    """
+    builder = StateGraph(CIPipelineState)
+
+    # ── Subgraph nodes ────────────────────────────────────────────────
+    builder.add_node("phase1",      phase1_app)
+    builder.add_node("phase2",      phase2_app)
+    builder.add_node("phase3",      phase3_app)
+    builder.add_node("evaluation",  eval_app)
+
+    # ── HITL gate nodes ───────────────────────────────────────────────
+    builder.add_node("risk_gate_check",   risk_gate_check)
+    builder.add_node("human_review_gate", human_review_gate)
+    builder.add_node("pipeline_rejected", pipeline_rejected)
+
+    # ── Edges ─────────────────────────────────────────────────────────
+    builder.add_edge(START, "phase1")
+    builder.add_edge("phase1", "risk_gate_check")
+
+    # risk_gate_check → human review gate or directly to phase2
+    builder.add_conditional_edges(
+        "risk_gate_check",
+        lambda s: "review" if s["hitl_required"] else "proceed",
+        {"review": "human_review_gate", "proceed": "phase2"},
+    )
+
+    # human_review_gate → phase2 (approved) or pipeline_rejected
+    builder.add_conditional_edges(
+        "human_review_gate",
+        route_after_hitl,
+        {"proceed": "phase2", "reject": "pipeline_rejected"},
+    )
+
+    builder.add_edge("phase2",     "phase3")
+    builder.add_edge("phase3",     "evaluation")
+    builder.add_edge("evaluation", END)
+    builder.add_edge("pipeline_rejected", END)
+
+    return builder
+
+
+# Module-level builder — compile at runtime with a checkpointer
+ci_builder = build_orchestrator()
