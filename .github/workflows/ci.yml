@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  # Prevent real LLM/external calls during CI
+  OPENAI_API_KEY: "test-key-not-real"
+  LANGCHAIN_TRACING_V2: "false"
+
+jobs:
+  # ── 1. Lint & type check ────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install lint tools
+        run: pip install ruff mypy
+
+      - name: Ruff lint
+        run: ruff check agents/ mcps/ pipeline/ api/ --select E,F,W,I
+
+      - name: Syntax check (py_compile)
+        run: |
+          python -m py_compile \
+            agents/*.py \
+            mcps/*.py \
+            pipeline/*.py \
+            api/webhook.py
+
+  # ── 2. Unit tests ───────────────────────────────────────────────────────────
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: pytest tests/unit/ -v --tb=short --asyncio-mode=auto
+
+  # ── 3. Integration tests ────────────────────────────────────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run integration tests (mocked MCPs)
+        run: pytest tests/integration/ -v --tb=short --asyncio-mode=auto
+
+  # ── 4. E2E smoke test ───────────────────────────────────────────────────────
+  e2e-smoke:
+    name: E2E Smoke
+    runs-on: ubuntu-latest
+    needs: integration
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run e2e smoke tests (mocked services)
+        run: pytest tests/e2e/ -v --tb=short --asyncio-mode=auto
+
+  # ── 5. Docker build check ───────────────────────────────────────────────────
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build webhook image
+        run: docker build -t k11techlab-qa-webhook:ci .
+
+  # ── 6. Security scan ────────────────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: Run bandit (skip test files)
+        run: bandit -r agents/ mcps/ pipeline/ api/ -ll --exclude tests/

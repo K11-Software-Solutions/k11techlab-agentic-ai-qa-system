@@ -1,0 +1,198 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# K11 TechLab — Agentic AI QA System
+# Starts all 7 MCP servers + the FastAPI webhook on a shared network.
+#
+# Usage:
+#   cp .env.example .env          # fill in your keys
+#   docker compose up -d          # start everything
+#   docker compose logs -f        # tail logs
+#   docker compose down           # stop everything
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  qa-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  knowledge-store-data:
+
+services:
+
+  # ── Knowledge Store MCP (port 8007) ────────────────────────────────────────
+  knowledge-store-mcp:
+    build:
+      context: ./knowledge-store-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8007:8007"
+    environment:
+      - DB_PATH=/data/knowledge.db
+      - PORT=8007
+    volumes:
+      - knowledge-store-data:/data
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── GitHub MCP (port 8001) ─────────────────────────────────────────────────
+  github-mcp:
+    build:
+      context: ./external-mcps/github-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - PORT=8001
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Playwright MCP (port 8002) ─────────────────────────────────────────────
+  playwright-mcp:
+    build:
+      context: ./external-mcps/playwright-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+    # Playwright needs a display; use headless by default
+    shm_size: "2gb"
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── k6 MCP (port 8003) ────────────────────────────────────────────────────
+  k6-mcp:
+    build:
+      context: ./external-mcps/k6-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - PORT=8003
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Jira MCP (port 8004) ──────────────────────────────────────────────────
+  jira-mcp:
+    build:
+      context: ./external-mcps/jira-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      - JIRA_BASE_URL=${JIRA_BASE_URL}
+      - JIRA_EMAIL=${JIRA_EMAIL}
+      - JIRA_TOKEN=${JIRA_TOKEN}
+      - PORT=8004
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres + Postgres MCP (port 8005) ───────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qa_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-qa_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qa}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-mcp:
+    build:
+      context: ./external-mcps/postgres-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8005:8005"
+    environment:
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-qa}:${POSTGRES_PASSWORD:-qa_secret}@postgres:5432/${POSTGRES_DB:-qa_db}
+      - PORT=8005
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Slack MCP (port 8006) ─────────────────────────────────────────────────
+  slack-mcp:
+    build:
+      context: ./external-mcps/slack-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8006:8006"
+    environment:
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - PORT=8006
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Webhook Server (port 9000) ────────────────────────────────────
+  webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - GITHUB_MCP_URL=http://github-mcp:8001
+      - PLAYWRIGHT_MCP_URL=http://playwright-mcp:8002
+      - K6_MCP_URL=http://k6-mcp:8003
+      - JIRA_MCP_URL=http://jira-mcp:8004
+      - POSTGRES_MCP_URL=http://postgres-mcp:8005
+      - SLACK_MCP_URL=http://slack-mcp:8006
+      - KNOWLEDGE_STORE_MCP_URL=http://knowledge-store-mcp:8007
+      - TARGET_BASE_URL=${TARGET_BASE_URL:-http://host.docker.internal:8000}
+      - DB_URL=sqlite:////data/qa.db
+    volumes:
+      - knowledge-store-data:/data
+    depends_on:
+      github-mcp:
+        condition: service_healthy
+      knowledge-store-mcp:
+        condition: service_healthy
+    networks: [qa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
