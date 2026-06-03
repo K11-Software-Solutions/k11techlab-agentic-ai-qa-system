@@ -16,7 +16,7 @@ I've spent the last several months building a system to make that scenario impos
 
 ## What the System Does
 
-The K11tech Agentic QA System is a LangGraph-orchestrated CI/CD pipeline that activates the moment a pull request is opened.
+The K11tech Agentic AI QA System is a LangGraph-orchestrated CI/CD pipeline that activates the moment a pull request is opened.
 
 It does four things, fully automatically:
 

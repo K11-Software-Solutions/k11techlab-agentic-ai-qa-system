@@ -1,4 +1,4 @@
-"""Base class for all K11tech Agentic QA agents."""
+"""Base class for all K11tech Agentic AI QA agents."""
 from __future__ import annotations
 
 import asyncio

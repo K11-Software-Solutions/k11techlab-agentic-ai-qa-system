@@ -1,4 +1,4 @@
-# K11tech Agentic QA System
+# K11tech Agentic AI QA System
 
 A production-grade, LangGraph-native CI/CD quality pipeline: **14 specialist agents**, **7 MCP servers**, parallel execution, HITL approval gates, LangSmith observability, and DeepEval + RAGAS quality evaluation — triggered on every pull request.
 
@@ -271,4 +271,4 @@ pytest                      # all tests
 
 ---
 
-*K11tech Agentic QA System · kavitaj11@gmail.com*
+*K11tech Agentic AI QA System · kavitaj11@gmail.com*

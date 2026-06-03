@@ -1,4 +1,4 @@
-"""K11tech Agentic QA Agents — all 14 specialist agents."""
+"""K11tech Agentic AI QA Agents — all 14 specialist agents."""
 
 from .base import AgentResult, BaseQAAgent, MCPError
 
