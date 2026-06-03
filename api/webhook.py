@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from pipeline import run_pipeline, submit_hitl_decision, get_pipeline_state
 
 logger  = logging.getLogger(__name__)
-app     = FastAPI(title="K11 TechLab QA Webhook", version="2.0.0")
+app     = FastAPI(title="K11tech Agentic QA Webhook", version="2.0.0")
 WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
 

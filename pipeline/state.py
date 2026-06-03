@@ -1,5 +1,5 @@
 """
-CIPipelineState — shared TypedDict for the entire K11 TechLab QA pipeline.
+CIPipelineState — shared TypedDict for the entire K11tech Agentic QA pipeline.
 All four phases (analysis, execution, reporting, evaluation) read/write this state.
 """
 

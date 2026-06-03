@@ -1,7 +1,7 @@
 version: "3.9"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# K11 TechLab — Agentic AI QA System
+# K11tech Agentic QA System
 # Starts all 7 MCP servers + the FastAPI webhook on a shared network.
 #
 # Usage:

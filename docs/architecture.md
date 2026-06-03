@@ -2,7 +2,7 @@
 
 ## Overview
 
-The K11 TechLab Agentic AI QA System is a LangGraph-orchestrated CI/CD quality gate that
+The K11tech Agentic QA System is a LangGraph-orchestrated CI/CD quality gate that
 automatically analyses pull requests, dispatches specialist AI agents, and files defects —
 all without human intervention unless the risk score exceeds the configured threshold.
 

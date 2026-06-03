@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# K11 TechLab — Agentic AI QA System  |  Developer Makefile
+# K11tech Agentic QA System  |  Developer Makefile
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: help install lint test test-unit test-integration test-e2e \
@@ -14,7 +14,7 @@ UVICORN  ?= uvicorn
 # ── Help ──────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "  K11 TechLab QA System — available targets"
+	@echo "  K11tech Agentic QA System — available targets"
 	@echo ""
 	@echo "  Setup"
 	@echo "    install          Install Python dependencies"
