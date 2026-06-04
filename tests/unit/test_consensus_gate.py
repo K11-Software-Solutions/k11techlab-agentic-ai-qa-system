@@ -212,3 +212,134 @@ class TestConsensusRiskGateCheck:
         state = {"risk_score": 0.50}
         result = consensus_risk_gate_check(state)
         assert result["hitl_required"] is False
+
+
+# ── Consensus mode tests ──────────────────────────────────────────────────────
+
+from pipeline.consensus import ConsensusConfig, _check_unanimous, _check_majority, _check_weighted
+
+CFG_UNANIMOUS = ConsensusConfig(mode="unanimous", variance_threshold=0.20)
+CFG_MAJORITY  = ConsensusConfig(mode="majority",  variance_threshold=0.20)
+CFG_WEIGHTED  = ConsensusConfig(mode="weighted",  variance_threshold=0.20)
+
+# Votes: 2 HIGH, 1 MEDIUM — majority agrees HIGH
+TWO_HIGH_ONE_MEDIUM = [
+    ModelVote("gpt-4o",           0.78, [], "", "HIGH"),
+    ModelVote("claude-sonnet-4-6",0.80, [], "", "HIGH"),
+    ModelVote("gemini-1.5-pro",   0.55, [], "", "MEDIUM"),
+]
+
+
+class TestUnanimousMode:
+    def test_fails_on_two_high_one_medium(self):
+        agreed, reason = _check_unanimous(TWO_HIGH_ONE_MEDIUM, CFG_UNANIMOUS)
+        assert not agreed
+        assert "Bucket disagreement" in reason
+
+    def test_passes_when_all_same_bucket_low_std(self):
+        votes = [
+            ModelVote("a", 0.78, [], "", "HIGH"),
+            ModelVote("b", 0.79, [], "", "HIGH"),
+            ModelVote("c", 0.77, [], "", "HIGH"),
+        ]
+        agreed, _ = _check_unanimous(votes, CFG_UNANIMOUS)
+        assert agreed
+
+
+class TestMajorityMode:
+    def test_passes_on_two_high_one_medium(self):
+        agreed, reason = _check_majority(TWO_HIGH_ONE_MEDIUM, CFG_MAJORITY)
+        assert agreed
+        assert reason == ""
+
+    def test_fails_when_all_different_buckets(self):
+        votes = [
+            ModelVote("a", 0.30, [], "", "LOW"),
+            ModelVote("b", 0.55, [], "", "MEDIUM"),
+            ModelVote("c", 0.78, [], "", "HIGH"),
+        ]
+        agreed, reason = _check_majority(votes, CFG_MAJORITY)
+        assert not agreed
+        assert "No bucket has >= 2 votes" in reason
+
+    def test_fails_on_high_variance_even_with_majority_bucket(self):
+        votes = [
+            ModelVote("a", 0.78, [], "", "HIGH"),
+            ModelVote("b", 0.79, [], "", "HIGH"),
+            ModelVote("c", 0.20, [], "", "LOW"),   # outlier pulls variance up
+        ]
+        agreed, reason = _check_majority(votes, CFG_MAJORITY)
+        assert not agreed
+        assert "variance" in reason.lower()
+
+
+class TestWeightedMode:
+    def test_passes_regardless_of_buckets_if_low_variance(self):
+        votes = [
+            ModelVote("a", 0.78, [], "", "HIGH"),
+            ModelVote("b", 0.80, [], "", "HIGH"),
+            ModelVote("c", 0.55, [], "", "MEDIUM"),  # different bucket — OK in weighted
+        ]
+        agreed, _ = _check_weighted(votes, CFG_WEIGHTED)
+        # std([0.78,0.80,0.55]) ≈ 0.136 < 0.20 → should pass
+        assert agreed
+
+    def test_fails_on_high_variance(self):
+        votes = [
+            ModelVote("a", 0.90, [], "", "CRITICAL"),
+            ModelVote("b", 0.91, [], "", "CRITICAL"),
+            ModelVote("c", 0.20, [], "", "LOW"),
+        ]
+        agreed, reason = _check_weighted(votes, CFG_WEIGHTED)
+        assert not agreed
+        assert "variance" in reason.lower()
+
+
+class TestConsensusConfigFromEnv:
+    def test_defaults_to_unanimous(self, monkeypatch):
+        monkeypatch.delenv("CONSENSUS_MODE", raising=False)
+        cfg = ConsensusConfig.from_env()
+        assert cfg.mode == "unanimous"
+
+    def test_reads_majority_from_env(self, monkeypatch):
+        monkeypatch.setenv("CONSENSUS_MODE", "majority")
+        cfg = ConsensusConfig.from_env()
+        assert cfg.mode == "majority"
+
+    def test_reads_weighted_from_env(self, monkeypatch):
+        monkeypatch.setenv("CONSENSUS_MODE", "weighted")
+        cfg = ConsensusConfig.from_env()
+        assert cfg.mode == "weighted"
+
+    def test_falls_back_on_unknown_mode(self, monkeypatch):
+        monkeypatch.setenv("CONSENSUS_MODE", "banana")
+        cfg = ConsensusConfig.from_env()
+        assert cfg.mode == "unanimous"
+
+    def test_reads_variance_threshold_from_env(self, monkeypatch):
+        monkeypatch.setenv("CONSENSUS_VARIANCE_THRESHOLD", "0.15")
+        cfg = ConsensusConfig.from_env()
+        assert cfg.variance_threshold == pytest.approx(0.15)
+
+
+class TestModeEndToEnd:
+    @pytest.mark.asyncio
+    async def test_majority_mode_passes_two_high_one_medium(self):
+        cfg = ConsensusConfig(mode="majority", variance_threshold=0.20)
+        with patch("pipeline.consensus._call_openai",  AsyncMock(return_value=TWO_HIGH_ONE_MEDIUM[0])), \
+             patch("pipeline.consensus._call_claude",  AsyncMock(return_value=TWO_HIGH_ONE_MEDIUM[1])), \
+             patch("pipeline.consensus._call_gemini",  AsyncMock(return_value=TWO_HIGH_ONE_MEDIUM[2])):
+            result = await run_consensus_scoring(PR_DIFF, CONTEXT, config=cfg)
+        assert result.consensus_reached is True
+        assert result.forced_hitl is False
+        assert result.consensus_mode == "majority"
+
+    @pytest.mark.asyncio
+    async def test_unanimous_mode_fails_two_high_one_medium(self):
+        cfg = ConsensusConfig(mode="unanimous", variance_threshold=0.20)
+        with patch("pipeline.consensus._call_openai",  AsyncMock(return_value=TWO_HIGH_ONE_MEDIUM[0])), \
+             patch("pipeline.consensus._call_claude",  AsyncMock(return_value=TWO_HIGH_ONE_MEDIUM[1])), \
+             patch("pipeline.consensus._call_gemini",  AsyncMock(return_value=TWO_HIGH_ONE_MEDIUM[2])):
+            result = await run_consensus_scoring(PR_DIFF, CONTEXT, config=cfg)
+        assert result.forced_hitl is True
+        assert result.consensus_mode == "unanimous"

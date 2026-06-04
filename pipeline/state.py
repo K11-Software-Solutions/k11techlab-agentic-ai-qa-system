@@ -32,6 +32,7 @@ class CIPipelineState(TypedDict):
     consensus_forced_reason: Optional[str]    # explanation of forced HITL
     consensus_score_std:     Optional[float]  # std-dev of model scores
     consensus_buckets:       Optional[list]   # per-model bucket labels
+    consensus_mode:          Optional[str]    # unanimous | majority | weighted
 
     # ── HITL gate ────────────────────────────────────────────────────
     hitl_required:  bool              # True if risk_score >= 0.85 OR consensus forced
@@ -101,6 +102,7 @@ def initial_state(
         consensus_forced_reason=None,
         consensus_score_std=None,
         consensus_buckets=None,
+        consensus_mode=None,
         hitl_required=False,
         hitl_decision=None,
         hitl_reviewer=None,
