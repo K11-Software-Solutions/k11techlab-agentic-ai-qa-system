@@ -25,8 +25,16 @@ class CIPipelineState(TypedDict):
     retrieval_context:  list[str]      # chunks from Knowledge Store MCP
     changed_files:      list[str]      # list of changed file paths
 
+    # ── Multi-LLM Consensus Gate outputs ────────────────────────────
+    consensus_votes:         Optional[list]   # per-model vote details
+    consensus_reached:       Optional[bool]   # True = all models agreed
+    consensus_forced_hitl:   Optional[bool]   # True = disagreement → force HITL
+    consensus_forced_reason: Optional[str]    # explanation of forced HITL
+    consensus_score_std:     Optional[float]  # std-dev of model scores
+    consensus_buckets:       Optional[list]   # per-model bucket labels
+
     # ── HITL gate ────────────────────────────────────────────────────
-    hitl_required:  bool              # True if risk_score >= 0.85
+    hitl_required:  bool              # True if risk_score >= 0.85 OR consensus forced
     hitl_decision:  Optional[str]     # "approve" | "reject" | None
     hitl_reviewer:  Optional[str]     # reviewer login
     hitl_comment:   Optional[str]     # reviewer note
@@ -87,6 +95,12 @@ def initial_state(
         test_plan_text="",
         retrieval_context=[],
         changed_files=[],
+        consensus_votes=None,
+        consensus_reached=None,
+        consensus_forced_hitl=None,
+        consensus_forced_reason=None,
+        consensus_score_std=None,
+        consensus_buckets=None,
         hitl_required=False,
         hitl_decision=None,
         hitl_reviewer=None,

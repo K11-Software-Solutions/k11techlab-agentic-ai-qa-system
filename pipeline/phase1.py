@@ -14,6 +14,7 @@ from langgraph.graph import StateGraph, START, END
 
 from .state import CIPipelineState
 from .mcp_clients import github_mcp, knowledge_store_mcp
+from .consensus import consensus_score_risk
 
 logger = logging.getLogger(__name__)
 
@@ -154,15 +155,16 @@ def _format_plan_text(plan: dict) -> str:
 
 def build_phase1() -> Any:
     builder = StateGraph(CIPipelineState)
-    builder.add_node("fetch_pr_context",  fetch_pr_context)
+    builder.add_node("fetch_pr_context",   fetch_pr_context)
     builder.add_node("retrieve_knowledge", retrieve_knowledge)
-    builder.add_node("score_risk",         score_risk)
+    # consensus_score_risk replaces single-model score_risk
+    builder.add_node("score_risk",         consensus_score_risk)
     builder.add_node("generate_test_plan", generate_test_plan)
 
     # fetch_pr_context and retrieve_knowledge run in parallel from START
-    builder.add_edge(START, "fetch_pr_context")
-    builder.add_edge(START, "retrieve_knowledge")
-    # both fan-in to score_risk
+    builder.add_edge(START,                "fetch_pr_context")
+    builder.add_edge(START,                "retrieve_knowledge")
+    # both fan-in to consensus scorer
     builder.add_edge("fetch_pr_context",   "score_risk")
     builder.add_edge("retrieve_knowledge", "score_risk")
     builder.add_edge("score_risk",         "generate_test_plan")
