@@ -74,7 +74,7 @@ flowchart TD
   G --> H[Quality Gate Verdict]
 
   I[eval/03_run_evaluation.py] --> J[POST /webhook/github]
-  J --> K[poll /api/pipeline/{run_id}/status]
+  J --> K["poll pipeline status endpoint"]
   K --> L[results.jsonl]
   L --> M[eval/04_analyse_results.py]
 
@@ -335,16 +335,13 @@ This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 
 ---
 
-## Related
-
-- **Course:** [k11techlab-agentic-ai-autonomous-qa-system](https://github.com/kavitaj11/k11techlab-agentic-ai-autonomous-qa-system) — 11-module interactive LangGraph course that teaches this system concept by concept
-- **Newsletter:** K11 TechLab LinkedIn Newsletter — original system design writeup
-
 ---
 
 ## Citation
 
 If you use this work, please cite:
+
+Jadhav, K. (2026). Autonomous CI/CD Quality Assurance Using LangGraph Multi-Agent Orchestration and Risk-Proportionate Human-in-the-Loop Control. Zenodo. https://doi.org/10.5281/zenodo.20543872
 
 ```bibtex
 @misc{jadhav2026autonomous,
