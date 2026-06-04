@@ -36,6 +36,14 @@ class CIPipelineState(TypedDict):
     defects:      Annotated[list[dict], operator.add]
     errors:       Annotated[list[str],  operator.add]
 
+    # ── Auto-Remediation outputs (Phase 2.5) ─────────────────────────
+    remediation_pr_url:    Optional[str]   # GitHub URL of remediation PR
+    remediation_pr_number: Optional[int]   # GitHub PR number
+    remediation_branch:    Optional[str]   # branch name
+    remediation_patches:   Optional[int]   # count of patches applied
+    remediation_skipped:   Optional[int]   # count of patches skipped
+    remediation_error:     Optional[str]   # error message if failed
+
     # ── Phase 3 outputs ──────────────────────────────────────────────
     summary:        Optional[dict]    # {pass_rate, severity_breakdown, ...}
     final_report:   Optional[str]     # markdown CI report
@@ -86,6 +94,12 @@ def initial_state(
         test_results=[],
         defects=[],
         errors=[],
+        remediation_pr_url=None,
+        remediation_pr_number=None,
+        remediation_branch=None,
+        remediation_patches=None,
+        remediation_skipped=None,
+        remediation_error=None,
         summary=None,
         final_report=None,
         jira_tickets=None,

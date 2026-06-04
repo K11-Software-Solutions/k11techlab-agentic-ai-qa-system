@@ -18,6 +18,7 @@ from .hitl import (
     risk_gate_check, human_review_gate,
     pipeline_rejected, route_after_hitl,
 )
+from .remediation import run_remediation, should_remediate
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,11 @@ def build_orchestrator() -> Any:
     builder = StateGraph(CIPipelineState)
 
     # ── Subgraph nodes ────────────────────────────────────────────────
-    builder.add_node("phase1",      phase1_app)
-    builder.add_node("phase2",      phase2_app)
-    builder.add_node("phase3",      phase3_app)
-    builder.add_node("evaluation",  eval_app)
+    builder.add_node("phase1",       phase1_app)
+    builder.add_node("phase2",       phase2_app)
+    builder.add_node("remediation",  run_remediation)   # Phase 2.5
+    builder.add_node("phase3",       phase3_app)
+    builder.add_node("evaluation",   eval_app)
 
     # ── HITL gate nodes ───────────────────────────────────────────────
     builder.add_node("risk_gate_check",   risk_gate_check)
@@ -58,13 +60,19 @@ def build_orchestrator() -> Any:
         {"proceed": "phase2", "reject": "pipeline_rejected"},
     )
 
-    builder.add_edge("phase2",     "phase3")
-    builder.add_edge("phase3",     "evaluation")
-    builder.add_edge("evaluation", END)
+    # phase2 → remediation (if remediable defects) or directly to phase3
+    builder.add_conditional_edges(
+        "phase2",
+        should_remediate,
+        {"remediate": "remediation", "skip_remediation": "phase3"},
+    )
+    builder.add_edge("remediation", "phase3")
+    builder.add_edge("phase3",      "evaluation")
+    builder.add_edge("evaluation",  END)
     builder.add_edge("pipeline_rejected", END)
 
     return builder
 
 
-# Module-level builder — compile at runtime with a checkpointer
+# Module-level builder
 ci_builder = build_orchestrator()
