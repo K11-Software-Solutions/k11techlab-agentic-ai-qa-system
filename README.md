@@ -1,6 +1,12 @@
 # K11tech Agentic AI QA System
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20543872.svg)](https://doi.org/10.5281/zenodo.20543872)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/)
+
 A production-grade, LangGraph-native CI/CD quality pipeline: **14 specialist agents**, **7 MCP servers**, parallel execution, HITL approval gates, LangSmith observability, and DeepEval + RAGAS quality evaluation — triggered on every pull request.
+
+> **Research Paper:** Jadhav, K. (2026). *Autonomous CI/CD Quality Assurance Using LangGraph Multi-Agent Orchestration and Risk-Proportionate Human-in-the-Loop Control.* Zenodo. https://doi.org/10.5281/zenodo.20543872
 
 ---
 
@@ -55,12 +61,60 @@ GitHub PR Webhook
 └───────────────────────────────────────────────────────────────────┘
 ```
 
+```mermaid
+flowchart TD
+  A[GitHub PR Webhook] --> B[Phase 1: Analysis]
+  B --> C{Risk >= 0.85?}
+  C -- Yes --> D[HITL Gate]
+  C -- No --> E[Phase 2: Parallel Agents]
+  D -- Approve --> E
+  D -- Reject --> X[Pipeline Rejected]
+  E --> F[Phase 3: Reporting]
+  F --> G[Evaluation: DeepEval + RAGAS]
+  G --> H[Quality Gate Verdict]
+
+  I[eval/03_run_evaluation.py] --> J[POST /webhook/github]
+  J --> K[poll /api/pipeline/{run_id}/status]
+  K --> L[results.jsonl]
+  L --> M[eval/04_analyse_results.py]
+
+  N[MCP Endpoints Reachable] -. required for real test signal .-> E
+```
+
+Evaluation harness path (used by empirical runs in eval/):
+
+```text
+eval/03_run_evaluation.py
+  -> POST /webhook/github (pull_request payload)
+  -> poll /api/pipeline/{run_id}/status until verdict is available
+  -> append JSONL result row (verdict, duration, classification inputs)
+  -> eval/04_analyse_results.py computes RQ1-RQ4 metrics
+```
+
+Important runtime dependency:
+
+- Phase 2 depends on reachable MCP endpoints.
+- If MCP services are unavailable, agent execution can fail and produce limited/no test signal.
+- In that case, verdicts are fail-closed and evaluation metrics should be interpreted as infrastructure-limited rather than model-quality-limited.
+
 ---
 
 ## Project Structure
 
 ```
 k11techlab-agentic-ai-qa-system/
+├── agents/                # specialist agent implementations used by pipeline phases
+├── api/
+│   └── webhook.py         # FastAPI: GitHub webhook + HITL + status endpoints
+├── docs/                  # architecture, quickstart, and agent docs
+├── eval/
+│   ├── 00_scaffold_repos.py
+│   ├── 01_collect_dataset.py
+│   ├── 02_label_dataset.py
+│   ├── 03_run_evaluation.py
+│   ├── 04_analyse_results.py
+│   └── data/              # dataset, labels, and evaluation outputs
+├── mcps/                  # typed MCP HTTP client wrappers used by pipeline nodes
 ├── pipeline/
 │   ├── __init__.py          # public API: run_pipeline, submit_hitl_decision
 │   ├── state.py             # CIPipelineState TypedDict + initial_state()
@@ -72,17 +126,20 @@ k11techlab-agentic-ai-qa-system/
 │   ├── orchestrator.py      # Main ci_builder StateGraph
 │   ├── runner.py            # run_pipeline(), stream_pipeline(), submit_hitl_decision()
 │   └── mcp_clients.py       # MCPClient wrappers for all 7 servers
-├── api/
-│   └── webhook.py           # FastAPI: GitHub webhook + HITL + status endpoints
 ├── tests/
 │   ├── conftest.py          # shared fixtures
 │   ├── unit/                # node-level tests with mocked LLMs/MCPs
 │   ├── integration/         # subgraph tests with MemorySaver
 │   └── e2e/                 # full pipeline smoke tests
-├── .env.example
+├── docker-compose.yml       # orchestrates webhook + MCP server containers
+├── Dockerfile
 ├── requirements.txt
+├── .env.example
+├── checkpoints.db           # SQLite checkpoint store (runtime-generated)
 └── README.md
 ```
+
+Note: This repository includes MCP client wrappers in mcps/. MCP server implementations referenced by docker-compose.yml are expected from external service folders or running endpoints.
 
 ---
 
@@ -105,23 +162,22 @@ cp .env.example .env
 
 ### 3. Start MCP servers
 
-Each MCP server runs as a separate process. Start them before the pipeline:
+The webhook depends on all MCP servers being reachable. You can either:
+
+- Start the full stack via Docker Compose (recommended), or
+- Point env vars (`GITHUB_MCP_URL`, `PLAYWRIGHT_MCP_URL`, etc.) to already-running MCP endpoints.
+
+Recommended:
 
 ```bash
-# In separate terminals (or use Docker Compose):
-cd mcps/github_mcp    && uvicorn server:app --port 3001
-cd mcps/playwright_mcp && uvicorn server:app --port 3002
-cd mcps/k6_mcp         && uvicorn server:app --port 3003
-cd mcps/jira_mcp       && uvicorn server:app --port 3004
-cd mcps/postgres_mcp   && uvicorn server:app --port 3005
-cd mcps/slack_mcp      && uvicorn server:app --port 3006
-cd mcps/knowledge_store_mcp && uvicorn server:app --port 3007
+docker compose up -d
+docker compose ps
 ```
 
 ### 4. Start the webhook server
 
 ```bash
-uvicorn api.webhook:app --host 0.0.0.0 --port 8000 --reload
+uvicorn api.webhook:app --host 0.0.0.0 --port 9000 --reload
 ```
 
 ### 5. Run the pipeline programmatically
@@ -170,13 +226,13 @@ asyncio.run(main())
 
 | MCP Server | Port | Purpose |
 |-----------|------|---------|
-| `github_mcp` | 3001 | PR files, code scanning, regression runs |
-| `playwright_mcp` | 3002 | Browser automation, E2E, a11y audits |
-| `k6_mcp` | 3003 | Load test execution |
-| `jira_mcp` | 3004 | Issue creation and tracking |
-| `postgres_mcp` | 3005 | Database validation and test result storage |
-| `slack_mcp` | 3006 | Notifications and HITL alerts |
-| `knowledge_store_mcp` | 3007 | Documentation retrieval for test planning |
+| `github_mcp` | 8001 | PR files, code scanning, regression runs |
+| `playwright_mcp` | 8002 | Browser automation, E2E, a11y audits |
+| `k6_mcp` | 8003 | Load test execution |
+| `jira_mcp` | 8004 | Issue creation and tracking |
+| `postgres_mcp` | 8005 | Database validation and test result storage |
+| `slack_mcp` | 8006 | Notifications and HITL alerts |
+| `knowledge_store_mcp` | 8007 | Documentation retrieval for test planning |
 
 ---
 
@@ -194,10 +250,19 @@ Risk score: 0.91 | Factors: auth change, sql injection risk
 Resume via Slack slash command or REST API:
 
 ```bash
-curl -X POST http://localhost:8000/api/hitl/decision \
+curl -X POST http://localhost:9000/api/hitl/decision \
   -H "Content-Type: application/json" \
   -d '{"run_id":"<id>","decision":"approve","reviewer":"qa-lead","comment":"Reviewed auth changes"}'
 ```
+
+---
+
+## Evaluation Harness Notes (June 2026)
+
+- `eval/03_run_evaluation.py` now posts a valid `pull_request` webhook event and polls `/api/pipeline/{run_id}/status` until a verdict is available.
+- Classification logic treats `FAIL`, `BLOCK`, `NEEDS_REVIEW`, and `REJECT` as flagged outcomes.
+- `pipeline/phase3.py` now stores `verdict_reason` and uses fail-closed behavior when no tests run because agents fail (`agent_execution_failed_no_test_signal`).
+- If MCP endpoints are down/unreachable, Phase 2 can produce no test signal; in that case quality metrics are not meaningful until MCP connectivity is restored.
 
 ---
 
@@ -264,6 +329,12 @@ pytest                      # all tests
 
 ---
 
+## License
+
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+
+---
+
 ## Related
 
 - **Course:** [k11techlab-agentic-ai-autonomous-qa-system](https://github.com/kavitaj11/k11techlab-agentic-ai-autonomous-qa-system) — 11-module interactive LangGraph course that teaches this system concept by concept
@@ -271,4 +342,21 @@ pytest                      # all tests
 
 ---
 
-*K11tech Agentic AI QA System · kavitaj11@gmail.com*
+## Citation
+
+If you use this work, please cite:
+
+```bibtex
+@misc{jadhav2026autonomous,
+  title     = {Autonomous CI/CD Quality Assurance Using LangGraph Multi-Agent Orchestration and Risk-Proportionate Human-in-the-Loop Control},
+  author    = {Kavita Jadhav},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.20543872},
+  url       = {https://doi.org/10.5281/zenodo.20543872}
+}
+```
+
+---
+
+*K11tech Agentic AI QA System · kavita.jadhav@k11softwaresolutions.com*
