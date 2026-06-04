@@ -1,0 +1,32 @@
+{
+    "meta":  {
+                 "collected_at":  "2026-06-03T13:34:31.413442+00:00",
+                 "repos":  [
+                               "K11-Software-Solutions/k11-eval-api",
+                               "K11-Software-Solutions/k11-eval-pipeline",
+                               "K11-Software-Solutions/k11-eval-webapp"
+                           ],
+                 "since":  "2026-01-01",
+                 "until":  "2026-06-30",
+                 "total_prs":  110
+             },
+    "prs":  [
+                {
+                    "id":  "K11-Software-Solutions/k11-eval-api#41",
+                    "repo":  "K11-Software-Solutions/k11-eval-api",
+                    "pr_number":  41,
+                    "title":  "Add integration test suite",
+                    "author":  "kavitaj11",
+                    "merged_at":  "2026-06-03T12:59:25Z",
+                    "base_sha":  "aa7af6b481a6cac09243d2424c23b29e69241c8d",
+                    "head_sha":  "dd2d0e1b114e83cb4243c55341704424e46cc928",
+                    "merge_commit_sha":  "8e4695c18f29ad3bd17a38bd89eeb19aded9fc6e",
+                    "files_changed":  1,
+                    "additions":  0,
+                    "deletions":  0,
+                    "url":  "https://github.com/K11-Software-Solutions/k11-eval-api/pull/41",
+                    "ground_truth":  "CLEAN",
+                    "label_method":  "manual_override"
+                }
+            ]
+}

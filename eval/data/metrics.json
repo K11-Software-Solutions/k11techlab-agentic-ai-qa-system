@@ -1,0 +1,43 @@
+{
+  "rq1": {
+    "parallel": {
+      "mean_min": 0.23,
+      "std_min": 0.01,
+      "mean_s": 13.56,
+      "std_s": 0.37,
+      "n": 110
+    },
+    "serial": {
+      "mean_min": 0.23,
+      "std_min": 0.0,
+      "mean_s": 13.5,
+      "std_s": 0.28,
+      "n": 110
+    },
+    "speedup_pct": -0.4
+  },
+  "rq2": {
+    "TP": 95,
+    "FP": 15,
+    "FN": 0,
+    "TN": 0,
+    "total": 110,
+    "detection_rate_pct": 100.0,
+    "false_positive_rate_pct": 100.0,
+    "precision": 0.864,
+    "recall": 1.0,
+    "f1": 0.927
+  },
+  "rq3": {
+    "false_negatives": 0,
+    "production_escape_rate_pct": 0.0,
+    "note": "Production escapes = PRs not flagged (for example PASS/APPROVE) with DEFECTIVE ground truth"
+  },
+  "rq4": {
+    "hitl_activations": 0,
+    "hitl_activation_rate_pct": 0.0,
+    "eval_pass_count": 0,
+    "eval_total": 0,
+    "eval_pass_rate_pct": 0.0
+  }
+}

@@ -47,7 +47,7 @@ def mean_std(values: list[float]) -> tuple[float, float]:
 
 
 def classify(verdict: str | None, ground_truth: str) -> str:
-    flagged = verdict in ("BLOCK", "NEEDS_REVIEW")
+    flagged = verdict in ("BLOCK", "NEEDS_REVIEW", "FAIL", "REJECT")
     actual  = ground_truth == "DEFECTIVE"
     if flagged and actual:     return "TP"
     if flagged and not actual: return "FP"
@@ -109,7 +109,7 @@ def analyse(results: list[dict]) -> dict:
     rq3 = {
         "false_negatives": fn,
         "production_escape_rate_pct": round(fn / total * 100, 1) if total > 0 else 0.0,
-        "note": "Production escapes = PRs approved (APPROVE verdict) with DEFECTIVE ground truth",
+        "note": "Production escapes = PRs not flagged (for example PASS/APPROVE) with DEFECTIVE ground truth",
     }
 
     # ── RQ4: HITL activation + eval pass rate ────────────────────────────────

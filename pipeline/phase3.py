@@ -32,6 +32,36 @@ _REPORT_PROMPT = ChatPromptTemplate.from_messages([
 MAX_JIRA_TICKETS = 10  # cap to avoid rate limit explosions
 
 
+def _derive_verdict(
+    *,
+    total_cases: int,
+    passed_cases: int,
+    critical_count: int,
+    high_count: int,
+    risk_score: float,
+    error_count: int,
+) -> tuple[str, str]:
+    """Derive a stable verdict, including a no-test fallback path."""
+    if critical_count > 0:
+        return "FAIL", "critical_defects_present"
+
+    if total_cases > 0:
+        pass_rate = passed_cases / total_cases
+        if pass_rate >= 0.95 and high_count == 0:
+            return "PASS", "meets_quality_threshold"
+        if pass_rate >= 0.95 and high_count > 0:
+            return "NEEDS_REVIEW", "high_severity_defects_present"
+        return "FAIL", "test_pass_rate_below_threshold"
+
+    if error_count > 0:
+        return "FAIL", "agent_execution_failed_no_test_signal"
+
+    # No tests executed and no explicit errors recorded.
+    if risk_score >= 0.7:
+        return "NEEDS_REVIEW", "no_test_execution_high_risk"
+    return "PASS", "no_test_execution_low_risk"
+
+
 async def aggregate_results(state: CIPipelineState) -> dict:
     """Compute pass rates and severity breakdown from Phase 2 results."""
     results = state["test_results"]
@@ -49,6 +79,15 @@ async def aggregate_results(state: CIPipelineState) -> dict:
     agents_run    = [r.get("agent") for r in results]
     agents_failed = [e.split()[0] for e in state["errors"]]
 
+    verdict, verdict_reason = _derive_verdict(
+        total_cases=total,
+        passed_cases=passed,
+        critical_count=severity.get("critical", 0),
+        high_count=severity.get("high", 0),
+        risk_score=float(state.get("risk_score", 0.0) or 0.0),
+        error_count=len(state["errors"]),
+    )
+
     summary = {
         "pass_rate":          round(passed / total, 3) if total else 0.0,
         "total_cases":        total,
@@ -59,7 +98,8 @@ async def aggregate_results(state: CIPipelineState) -> dict:
         "agents_run":         agents_run,
         "agents_failed":      agents_failed,
         "error_count":        len(state["errors"]),
-        "verdict":            "PASS" if (severity["critical"] == 0 and passed / total >= 0.95 if total else False) else "FAIL",
+        "verdict":            verdict,
+        "verdict_reason":     verdict_reason,
     }
     logger.info("Phase3: summary=%s", summary)
     return {"summary": summary}

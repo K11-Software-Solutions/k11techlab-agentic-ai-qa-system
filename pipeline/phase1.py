@@ -25,7 +25,7 @@ _plan_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 _RISK_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "You are a senior QA risk assessment expert. Analyse the PR diff and return "
-     "valid JSON only: {\"risk_score\": <float 0.0-1.0>, \"risk_factors\": [<str>]}.\n"
+    "valid JSON only: {{\"risk_score\": <float 0.0-1.0>, \"risk_factors\": [<str>]}}.\n"
      "risk_score guidance: 0.0-0.3=low, 0.4-0.6=medium, 0.7-0.84=high, 0.85+=critical.\n"
      "Risk factors to look for: auth changes, SQL queries, payment logic, "
      "security config, public API changes, database migrations, dependency updates."),
@@ -35,8 +35,8 @@ _RISK_PROMPT = ChatPromptTemplate.from_messages([
 _PLAN_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "You are a test planning expert. Given risk factors and changed files, "
-     "return valid JSON: {\"suites\": [{\"type\": <str>, \"priority\": <high|medium|low>, "
-     "\"cases\": [<str>], \"focus_areas\": [<str>]}], \"rationale\": <str>}.\n"
+    "return valid JSON: {{\"suites\": [{{\"type\": <str>, \"priority\": <high|medium|low>, "
+    "\"cases\": [<str>], \"focus_areas\": [<str>]}}], \"rationale\": <str>}}.\n"
      "Available suite types: api, playwright, performance, security, data, "
      "cross_browser, a11y, regression.\n"
      "Select only relevant suites. High-risk PRs should include security and api suites."),

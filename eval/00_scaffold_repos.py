@@ -25,6 +25,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import random
 import shutil
@@ -618,18 +619,55 @@ def run(cmd: list[str], cwd=None, check=True) -> subprocess.CompletedProcess:
                           capture_output=True, text=True)
 
 
-def create_repo(org: str, name: str, description: str, dry_run: bool) -> str:
-    """Create GitHub repo and return clone URL."""
-    print(f"\n📦 Creating repo: {org}/{name}")
-    if dry_run:
-        print(f"   [DRY RUN] gh repo create {org}/{name} --public")
-        return f"https://github.com/{org}/{name}.git"
+def repo_exists(org: str, name: str) -> bool:
+       result = subprocess.run(
+              ["gh", "repo", "view", f"{org}/{name}"],
+              check=False,
+              capture_output=True,
+              text=True,
+       )
+       return result.returncode == 0
 
-    result = run(["gh", "repo", "create", f"{org}/{name}",
-                  "--public", "--description", description,
-                  "--clone=false"])
-    print(f"   ✓ Created: https://github.com/{org}/{name}")
-    return f"https://github.com/{org}/{name}.git"
+
+def get_existing_pr_count(org: str, name: str) -> int:
+       result = subprocess.run(
+              [
+                     "gh", "pr", "list",
+                     "--repo", f"{org}/{name}",
+                     "--state", "all",
+                     "--limit", "500",
+                     "--json", "number",
+              ],
+              check=False,
+              capture_output=True,
+              text=True,
+       )
+       if result.returncode != 0:
+              return 0
+       try:
+              return len(json.loads(result.stdout or "[]"))
+       except json.JSONDecodeError:
+              return 0
+
+
+def create_repo(org: str, name: str, description: str, dry_run: bool) -> tuple[str, bool]:
+       """Create GitHub repo and return clone URL and whether it was newly created."""
+       print(f"\n[repo] Creating repo: {org}/{name}")
+       if dry_run:
+              print(f"   [DRY RUN] gh repo create {org}/{name} --public")
+              return f"https://github.com/{org}/{name}.git", False
+
+       if repo_exists(org, name):
+              print(f"   [resume] Exists, reusing: https://github.com/{org}/{name}")
+              return f"https://github.com/{org}/{name}.git", False
+
+       run([
+              "gh", "repo", "create", f"{org}/{name}",
+              "--public", "--description", description,
+              "--clone=false",
+       ])
+       print(f"   [ok] Created: https://github.com/{org}/{name}")
+       return f"https://github.com/{org}/{name}.git", True
 
 
 def scaffold_pr(repo_dir: str, org: str, repo_name: str,
@@ -648,14 +686,16 @@ def scaffold_pr(repo_dir: str, org: str, repo_name: str,
     for filepath, content in pr.files.items():
         full = Path(repo_dir) / filepath
         full.parent.mkdir(parents=True, exist_ok=True)
-        full.write_text(content)
+        full.write_text(content, encoding="utf-8")
 
     # Commit
     run(["git", "add", "."], cwd=repo_dir)
     run(["git", "commit", "-m", pr.title], cwd=repo_dir)
 
     # Push
-    run(["git", "push", "--set-upstream", "origin", pr.branch], cwd=repo_dir)
+    # Force-update avoids failures when resuming and a remote branch with the same
+    # name exists from a prior partial run.
+    run(["git", "push", "--force", "--set-upstream", "origin", pr.branch], cwd=repo_dir)
 
     # Open PR
     run(["gh", "pr", "create",
@@ -676,7 +716,10 @@ def scaffold_pr(repo_dir: str, org: str, repo_name: str,
     if pr.defective and pr.fix_message:
         fix_file = Path(repo_dir) / f"fixes/fix_{pr_num:02d}.py"
         fix_file.parent.mkdir(parents=True, exist_ok=True)
-        fix_file.write_text(f"# {pr.fix_message}\n# Applied fix after detecting issue in PR #{pr_num}\n")
+        fix_file.write_text(
+            f"# {pr.fix_message}\\n# Applied fix after detecting issue in PR #{pr_num}\\n",
+            encoding="utf-8",
+        )
         run(["git", "add", "."], cwd=repo_dir)
         run(["git", "commit", "-m", pr.fix_message], cwd=repo_dir)
         run(["git", "push"], cwd=repo_dir)
@@ -686,27 +729,40 @@ def scaffold_pr(repo_dir: str, org: str, repo_name: str,
 
 def scaffold_repo(org: str, name: str, description: str,
                   prs: list[PRSpec], dry_run: bool):
-    clone_url = create_repo(org, name, description, dry_run)
+       clone_url, created_new = create_repo(org, name, description, dry_run)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo_dir = os.path.join(tmpdir, name)
+       with tempfile.TemporaryDirectory() as tmpdir:
+              repo_dir = os.path.join(tmpdir, name)
 
-        if not dry_run:
-            # Clone
-            run(["git", "clone", clone_url, repo_dir])
+              if not dry_run:
+                     # Clone
+                     run(["git", "clone", clone_url, repo_dir])
 
-            # Create initial commit
-            readme = Path(repo_dir) / "README.md"
-            readme.write_text(f"# {name}\n\n{description}\n")
-            run(["git", "add", "."], cwd=repo_dir)
-            run(["git", "commit", "-m", "Initial commit"], cwd=repo_dir)
-            run(["git", "push"], cwd=repo_dir)
+                     if created_new:
+                            # Create initial commit only for newly-created repos.
+                            readme = Path(repo_dir) / "README.md"
+                            readme.write_text(f"# {name}\n\n{description}\n", encoding="utf-8")
+                            run(["git", "add", "."], cwd=repo_dir)
+                            run(["git", "commit", "-m", "Initial commit"], cwd=repo_dir)
+                            run(["git", "push"], cwd=repo_dir)
 
-        print(f"  Creating {len(prs)} PRs ...")
-        for i, pr in enumerate(prs, 1):
-            scaffold_pr(repo_dir, org, name, pr, i, dry_run)
+              start_index = 0
+              prs_to_create = prs
+              if not dry_run:
+                     start_index = get_existing_pr_count(org, name)
+                     if start_index >= len(prs):
+                            print(f"  All PRs already present ({start_index}/{len(prs)}), skipping.")
+                            print(f"\n[ok] Repo complete: https://github.com/{org}/{name}")
+                            return
+                     if start_index > 0:
+                            print(f"  Resuming at PR {start_index + 1} (already present: {start_index})")
+                     prs_to_create = prs[start_index:]
 
-    print(f"\n✓ Repo complete: https://github.com/{org}/{name}")
+              print(f"  Creating {len(prs_to_create)} PRs ...")
+              for i, pr in enumerate(prs_to_create, start_index + 1):
+                     scaffold_pr(repo_dir, org, name, pr, i, dry_run)
+
+       print(f"\n[ok] Repo complete: https://github.com/{org}/{name}")
 
 
 def main():
@@ -748,3 +804,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+

@@ -30,6 +30,13 @@ from pathlib import Path
 import httpx
 
 WEBHOOK_DEFAULT = "http://localhost:9000"
+POLL_INTERVAL_S = 1.0
+POLL_TIMEOUT_S = 600.0
+
+
+def _is_flagged_verdict(verdict: str | None) -> bool:
+    """Return True when the system verdict indicates risk/defect escalation."""
+    return verdict in ("BLOCK", "NEEDS_REVIEW", "FAIL", "REJECT")
 
 
 async def trigger_pipeline(
@@ -39,37 +46,84 @@ async def trigger_pipeline(
     pr_number: int,
     mode: str,  # "parallel" | "serial"
 ) -> dict:
-    """POST a synthetic PR event to the webhook and poll for the result."""
+    """POST a synthetic PR event and poll status until the run finishes."""
     payload = {
-        "action": "closed",
+        "action": "opened",
+        "repository": {"full_name": repo},
         "pull_request": {
             "number": pr_number,
-            "merged": True,
-            "base": {"repo": {"full_name": repo}},
+            "base": {"ref": "main"},
+            "user": {"login": "eval-bot"},
         },
-        "eval_mode": mode,          # pipeline reads this to switch dispatch strategy
+        "eval_mode": mode,
     }
 
     start = time.monotonic()
     resp = await client.post(
         f"{webhook_url}/webhook/github",
         json=payload,
-        headers={"X-Eval-Mode": mode},
+        headers={"X-Eval-Mode": mode, "X-GitHub-Event": "pull_request"},
         timeout=600,
     )
     resp.raise_for_status()
-    duration = time.monotonic() - start
-
     body = resp.json()
+
+    if body.get("status") == "ignored":
+        return {
+            "run_id": body.get("run_id"),
+            "verdict": None,
+            "risk_score": None,
+            "hitl_triggered": False,
+            "defects_found": [],
+            "eval_passed": None,
+            "duration_s": round(time.monotonic() - start, 2),
+            "error": f"webhook ignored event/action: {body}",
+        }
+
+    run_id = body.get("run_id")
+    if not run_id:
+        return {
+            "run_id": None,
+            "verdict": body.get("verdict"),
+            "risk_score": body.get("risk_score"),
+            "hitl_triggered": body.get("hitl_triggered", False),
+            "defects_found": body.get("defects_found", []),
+            "eval_passed": body.get("eval_passed"),
+            "duration_s": round(time.monotonic() - start, 2),
+            "error": body.get("error") or "missing run_id in webhook response",
+        }
+
+    deadline = start + POLL_TIMEOUT_S
+    status_payload: dict = {}
+    while time.monotonic() < deadline:
+        status_resp = await client.get(
+            f"{webhook_url}/api/pipeline/{run_id}/status",
+            timeout=60,
+        )
+        if status_resp.status_code == 404:
+            await asyncio.sleep(POLL_INTERVAL_S)
+            continue
+
+        status_resp.raise_for_status()
+        status_payload = status_resp.json()
+        if status_payload.get("verdict") is not None:
+            break
+
+        await asyncio.sleep(POLL_INTERVAL_S)
+
+    duration = time.monotonic() - start
+    verdict = status_payload.get("verdict")
+    defect_count = status_payload.get("defect_count")
+
     return {
-        "run_id":       body.get("run_id"),
-        "verdict":      body.get("verdict"),          # APPROVE | BLOCK | NEEDS_REVIEW
-        "risk_score":   body.get("risk_score"),
-        "hitl_triggered": body.get("hitl_triggered", False),
-        "defects_found":  body.get("defects_found", []),
-        "eval_passed":    body.get("eval_passed"),
+        "run_id":       run_id,
+        "verdict":      verdict,
+        "risk_score":   None,
+        "hitl_triggered": verdict == "NEEDS_REVIEW",
+        "defects_found":  [] if defect_count is None else [{}] * int(defect_count),
+        "eval_passed":    status_payload.get("eval_passed"),
         "duration_s":     round(duration, 2),
-        "error":          body.get("error"),
+        "error":          None if verdict is not None else "timed out waiting for pipeline verdict",
     }
 
 
@@ -104,8 +158,7 @@ async def run_pr(
 
 def classify(verdict: str | None, ground_truth: str) -> str:
     """Map (verdict, ground_truth) to TP/FP/TN/FN."""
-    # BLOCK or NEEDS_REVIEW = system flagged as defective
-    flagged = verdict in ("BLOCK", "NEEDS_REVIEW")
+    flagged = _is_flagged_verdict(verdict)
     actual  = ground_truth == "DEFECTIVE"
     if flagged and actual:   return "TP"
     if flagged and not actual: return "FP"

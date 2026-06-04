@@ -15,6 +15,7 @@ htmlcov/
 # Environment
 .env
 *.env.local
+.env.example
 
 # Runtime
 checkpoints.db
