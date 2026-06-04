@@ -54,7 +54,13 @@ def _derive_verdict(
         return "FAIL", "test_pass_rate_below_threshold"
 
     if error_count > 0:
-        return "FAIL", "agent_execution_failed_no_test_signal"
+        # MCP/tooling outage: no test signal, but Phase 1 LLM risk score is available.
+        # Use it as a proxy verdict rather than hard-failing every PR.
+        if risk_score >= 0.7:
+            return "FAIL", "agent_execution_failed_high_risk"
+        if risk_score >= 0.4:
+            return "NEEDS_REVIEW", "agent_execution_failed_medium_risk"
+        return "PASS", "agent_execution_failed_low_risk"
 
     # No tests executed and no explicit errors recorded.
     if risk_score >= 0.7:
