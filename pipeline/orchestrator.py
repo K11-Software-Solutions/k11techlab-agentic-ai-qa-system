@@ -1,3 +1,16 @@
+﻿# Copyright 2026 K11 Software Solutions LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """
 Main Orchestrator — composes all four phases and the HITL gate into one StateGraph.
 Pure routing: all business logic lives in the subgraphs.
@@ -15,9 +28,10 @@ from .phase2 import phase2_app
 from .phase3 import phase3_app
 from .evaluation import eval_app
 from .hitl import (
-    risk_gate_check, human_review_gate,
+    human_review_gate,
     pipeline_rejected, route_after_hitl,
 )
+from .consensus import consensus_risk_gate_check
 from .remediation import run_remediation, should_remediate
 
 logger = logging.getLogger(__name__)
@@ -38,7 +52,7 @@ def build_orchestrator() -> Any:
     builder.add_node("evaluation",   eval_app)
 
     # ── HITL gate nodes ───────────────────────────────────────────────
-    builder.add_node("risk_gate_check",   risk_gate_check)
+    builder.add_node("risk_gate_check",   consensus_risk_gate_check)
     builder.add_node("human_review_gate", human_review_gate)
     builder.add_node("pipeline_rejected", pipeline_rejected)
 

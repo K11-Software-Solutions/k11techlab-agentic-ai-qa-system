@@ -2,19 +2,19 @@
   "rq1": {
     "parallel": {
       "mean_min": 0.23,
-      "std_min": 0.01,
-      "mean_s": 13.56,
-      "std_s": 0.37,
+      "std_min": 0.02,
+      "mean_s": 13.84,
+      "std_s": 0.99,
       "n": 110
     },
     "serial": {
       "mean_min": 0.23,
-      "std_min": 0.0,
-      "mean_s": 13.5,
-      "std_s": 0.28,
+      "std_min": 0.01,
+      "mean_s": 13.59,
+      "std_s": 0.3,
       "n": 110
     },
-    "speedup_pct": -0.4
+    "speedup_pct": -1.8
   },
   "rq2": {
     "TP": 95,
