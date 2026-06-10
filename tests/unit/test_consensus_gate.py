@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from pipeline.consensus import (
     ModelVote,
     ConsensusResult,
+    ConsensusConfig,
     run_consensus_scoring,
     consensus_score_risk,
     consensus_risk_gate_check,
@@ -105,10 +106,12 @@ class TestConsensusLogic:
 
     @pytest.mark.asyncio
     async def test_forced_hitl_on_high_variance(self):
+        # weighted mode has no bucket check — tests the pure variance path
+        cfg = ConsensusConfig(mode="weighted")
         with patch("pipeline.consensus._call_openai",  AsyncMock(return_value=DISAGREE_VARIANCE[0])), \
              patch("pipeline.consensus._call_claude",  AsyncMock(return_value=DISAGREE_VARIANCE[1])), \
              patch("pipeline.consensus._call_gemini",  AsyncMock(return_value=DISAGREE_VARIANCE[2])):
-            result = await run_consensus_scoring(PR_DIFF, CONTEXT)
+            result = await run_consensus_scoring(PR_DIFF, CONTEXT, config=cfg)
         assert result.forced_hitl is True
         assert "variance" in result.forced_hitl_reason.lower()
 
